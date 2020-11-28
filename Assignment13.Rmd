@@ -13,54 +13,81 @@ library(data.table)
 
 # Part 1
 ```{r part1, echo=FALSE}
-t_test_function <- function(data, val_col, group_col, var_equal){
 
+# a function used to test for two groups whether they are fundamentally different along a given column
+# data is the dataset we are studying
+# val_col is the variable we wish to investigate
+# group_col contains the two groups we are investigating
+# var_equal is a boolean value that determines the test we are using
+t_test_function <- function(data, val_col, group_col, var_equal){
+  # split the data according to the groups, probably could be done more dynamically for general use
   peng_1 <- data[data[[group_col]] == "Adelie",]
   peng_2 <- data[data[[group_col]] == "Chinstrap",]
   
+  #get the sample size of each group
   sample_size_1 <- peng_1 %>% nrow()
   sample_size_2 <- peng_2 %>% nrow()
   
+  # get the sample mean of each group
   sample_mean_1 <- peng_1 %>% pull(val_col) %>% mean(na.rm=1)
   sample_mean_2 <- peng_2 %>% pull(val_col) %>% mean(na.rm=1)
   
+  # calculate the sample sd of each group
   sample_sd_1 <- peng_1 %>% pull(val_col) %>% sd(na.rm = 1)
   sample_sd_2 <- peng_2 %>% pull(val_col) %>% sd(na.rm = 1)
   
+  # find the combined standard deviation of the two groups using the previously found sds
   sd_combined <- sqrt(((sample_size_1 - 1)*sample_sd_1^2+(sample_size_2 - 1)*sample_sd_2^2)/(sample_size_1+sample_size_2-2))
   
+  # test which test to use now that all common metrics have been calculated
   if(var_equal){
+    # perform student unpaired t test
+    
+    # calculate t statistic
     t_statistic <- (sample_mean_1-sample_mean_2)/(sd_combined*sqrt(1/sample_size_1+1/sample_size_2))
+    
+    # find the p value
     p_value <- 2*(1-pt(abs(t_statistic), df=sample_size_1+sample_size_2-2))
     
-    #unsure where to chuck this in
+    # generate the effect size, however it seems to not get reported in the final return 
     effect_size <- (sample_mean_1 - sample_mean_2) / sd_combined 
     
+    # determine degrees of freedom
     dof <- sample_size_1 + sample_size_2 - 2
     
+    # generate a data frame of the calculated values to output
     result_df <- data.frame(t_statistic, dof, p_value)
     colnames(result_df) <- c("t_stat", "dof", "p_val")
     return(result_df)
   } else {
+    # perform welch unpaired t test
+    
+    # generate t statatistic
     t_statistic_welch <- (sample_mean_1 - sample_mean_2) / (sqrt(sample_sd_1^2/sample_size_1 + sample_sd_2^2/sample_size_2))
+    
+    # compute p value
     p_val_welch <- 2*(1-pt(abs(t_statistic_welch), df = sample_size_1+sample_size_2 - 2))
     
-    # slightly off here
+    # find degrees of freedom
     dof_welch <- ((sample_sd_1^2/sample_size_1) + (sample_sd_2^2/sample_size_2))^2 / ((1/(sample_size_1 - 1)* (sample_sd_1^2/sample_size_1)^2) + (1/(sample_size_2 - 1)*(sample_sd_2^2/sample_size_2)^2))
     
+    # combine values into a data frame to be returned from the function
     result_df_welch <- data.frame(t_statistic_welch, dof_welch, p_val_welch)
     colnames(result_df_welch) <- c("t_stat", "dof", "p_val")
     return(result_df_welch)
   }
  }
 
+# remove the Gentoo species and remove NA values
 peng_AC<-penguins%>%
-  drop_na(species,body_mass_g)%>%
+  drop_na(species,body_mass_g)%>% 
   filter(species!="Gentoo")
 
+# perform t test on our created function on the body mass variable and test it on both tests used
 t_test_function(data=peng_AC, val_col="body_mass_g", group_col="species", var_equal = TRUE)
 t_test_function(data=peng_AC, val_col="body_mass_g", group_col="species", var_equal = FALSE)
 
+# compare results of our implementation to the built in function
 t.test(body_mass_g~species, data=peng_AC, var.equal = TRUE)
 t.test(body_mass_g~species, data=peng_AC, var.equal = FALSE)
 
@@ -71,30 +98,44 @@ t.test(body_mass_g~species, data=peng_AC, var.equal = FALSE)
 library(Stat2Data)
 
 data("Hawks")
-hawks <- data.table(Hawks)
+hawks <- data.table(Hawks)# load hawks data
 
+# for a given species of hawk, extract the Hallux column values and remove NA values
 hallux_by_species <- function(data, species_code){
   return(data %>% filter(Species == species_code) %>%
     drop_na(Hallux) %>%
     pull(Hallux))
 }
 
+# perform wilcox test on the two species CH and SS to determine if there is a difference in their hallux lengths, exact means that an exact p value is calculated
 wilcox.test(hallux_by_species(hawks, "CH"), hallux_by_species(hawks, "SS"), exact=TRUE)
 
+# get the sample sizes of each of the two species
 sample_size_ss <- length(hallux_by_species(hawks, "SS"))
 sample_size_ch <- length(hallux_by_species(hawks, "CH"))
+
+# calculate the U statistic between the two groups based on their hallux lengths
 u_statistic <- as.numeric(wilcox.test(hallux_by_species(hawks, "CH"), hallux_by_species(hawks, "SS"), exact=TRUE)$statistic)
 
+# calculate their rank biserial value based on the previously extracted u statistic
 rank_biserial <- (2*u_statistic / (sample_size_ss * sample_size_ch)) - 1
 rank_biserial
 
+# a function designed to calculate the u statistic and effect size for two groups within a dataset
+# based on a specific variable
+
+# df is the data, val_col is the variable of interest
+# group_col is the group we are grouping by and group_1 and group_2 are those respective groups
 MWW_stats <- function(df, val_col, group_col, group_1, group_2){
+  # separate the groups of interest and extract the values in the column of interest
   group_1_vals <- df[df[[group_col]] == group_1, ] %>% pull(val_col) %>% na.omit()
   group_2_vals <- df[df[[group_col]] == group_2, ] %>% pull(val_col) %>% na.omit()
   
+  # get their respective sample sizes
   n_1 <- length(group_1_vals)
   n_2 <- length(group_2_vals)
   
+  # calculate the u statistic with built in tie handling
   u_stat <- 0
   for (x in group_1_vals){
     for (y in group_2_vals){
@@ -106,13 +147,16 @@ MWW_stats <- function(df, val_col, group_col, group_1, group_2){
     }
   }
   
+  # using the calculated u statistic, find the effect size
   effect_size <- 2*u_stat / (n_1*n_2) - 1
   
+  # return the results in a dataframe
   result_df_mww <- data.frame(u_stat, effect_size)
   colnames(result_df_mww) <- c("U_stat", "effect_size")
   return(result_df_mww)
 }
 
+# call the function to test it works with the penguins data
 MWW_stats(penguins, "body_mass_g", "species", "Adelie", "Chinstrap")
 
 ```
